@@ -1,4 +1,4 @@
-@import io.github.felipegvf.apto102.Page
+@import dev.felipegvf.apto102.Page
 @import java.util.List
 
 @param String name

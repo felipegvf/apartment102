@@ -1,4 +1,4 @@
-package io.github.felipegvf.apto102;
+package dev.felipegvf.apto102;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

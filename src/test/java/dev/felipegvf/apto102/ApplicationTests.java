@@ -1,4 +1,4 @@
-package io.github.felipegvf.apto102;
+package dev.felipegvf.apto102;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
