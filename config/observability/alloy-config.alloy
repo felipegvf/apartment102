@@ -12,11 +12,6 @@ loki.write "local_loki" {
 loki.source.file "local_files" {
     targets    = local.file_match.applogs.targets
     forward_to = [loki.process.add_new_label.receiver]
-    decompression {
-        enabled       = true
-        initial_delay = "10s"
-        format        = "gz"
-    }
 }
 
 
@@ -24,15 +19,21 @@ loki.process "add_new_label" {
     stage.logfmt {
         mapping = {
             "extracted_level" = "level",
-            "extracted_logger" = "logger",
         }
     }
 
     stage.labels {
         values = {
             "level" = "extracted_level",
-            "logger" = "extracted_logger",
         }
     }
+
+    stage.static_labels {
+        values = {
+            service_name = "apartment102",
+        }
+    }
+
+
      forward_to = [loki.write.local_loki.receiver]
 }
