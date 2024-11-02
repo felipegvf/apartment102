@@ -1,4 +1,4 @@
-package io.github.felipegvf.apto102;
+package dev.felipegvf.apto102;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
