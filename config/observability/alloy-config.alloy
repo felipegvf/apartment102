@@ -34,6 +34,49 @@ loki.process "add_new_label" {
         }
     }
 
-
      forward_to = [loki.write.local_loki.receiver]
+}
+
+otelcol.receiver.otlp "apartment102" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+
+  output {
+    metrics = [otelcol.processor.batch.example.input]
+    logs    = [otelcol.processor.batch.example.input]
+  }
+}
+
+otelcol.processor.batch "example" {
+  output {
+    metrics = [otelcol.exporter.prometheus.local_prometheus.input]
+    logs    = [otelcol.exporter.loki.local_loki.input]
+  }
+}
+
+otelcol.exporter.prometheus "local_prometheus" {
+        forward_to = [prometheus.remote_write.local_prometheus.receiver]
+    }
+
+prometheus.remote_write "local_prometheus" {
+    endpoint {
+        url = "http://prometheus:9090/api/v1/write"
+    }
+}
+
+otelcol.exporter.loki "local_loki" {
+	forward_to = [loki.write.local_loki.receiver]
+}
+
+prometheus.scrape "example" {
+  targets = [{
+    __address__ = "alloy:12345",
+  }]
+
+  forward_to = [prometheus.remote_write.local_prometheus.receiver]
 }
