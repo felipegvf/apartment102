@@ -1,0 +1,44 @@
+local.file "endpoints" {
+    // The endpoints file is used to define the endpoints, credentials and options
+    // for the Alloy export to.
+    filename = "/etc/alloy/endpoints.json"
+}
+
+prometheus.remote_write "mimir" {
+    // The endpoint is the Mimir service.
+    endpoint {
+        url = json_path(local.file.endpoints.content, ".metrics.url")[0]
+
+        // Basic auth credentials. If the endpoint is not TLS, whilst sent, these will be ignored.
+        basic_auth {
+            username = json_path(local.file.endpoints.content, ".metrics.basicAuth.username")[0]
+            password = json_path(local.file.endpoints.content, ".metrics.basicAuth.password")[0]
+        }
+    }
+}
+
+otelcol.receiver.otlp "otlp_receiver" {
+    http {
+        endpoint = "0.0.0.0:4318"
+    }
+
+    output {
+        metrics = [otelcol.processor.batch.default.input,]
+    }
+}
+
+otelcol.processor.batch "default" {
+    // Wait until we've received 1000 samples, up to a maximum of 2000.
+    send_batch_size = 1000
+    send_batch_max_size = 2000
+    // Or until 2 seconds have elapsed.
+    timeout = "2s"
+    // When the Alloy has enough batched data, send it to the OpenTelemetry exporter named 'tempo'.
+    output {
+        metrics = [otelcol.exporter.prometheus.default.input]
+    }
+}
+
+otelcol.exporter.prometheus "default" {
+        forward_to = [prometheus.remote_write.mimir.receiver]
+}
