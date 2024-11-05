@@ -49,6 +49,7 @@ otelcol.receiver.otlp "apartment102" {
   output {
     metrics = [otelcol.processor.batch.example.input]
     logs    = [otelcol.processor.batch.example.input]
+    traces  = [otelcol.processor.batch.example.input,]
   }
 }
 
@@ -56,12 +57,13 @@ otelcol.processor.batch "example" {
   output {
     metrics = [otelcol.exporter.prometheus.local_prometheus.input]
     logs    = [otelcol.exporter.loki.local_loki.input]
+    traces  = [otelcol.exporter.otlp.local_tempo.input]
   }
 }
 
 otelcol.exporter.prometheus "local_prometheus" {
         forward_to = [prometheus.remote_write.local_prometheus.receiver]
-    }
+}
 
 prometheus.remote_write "local_prometheus" {
     endpoint {
@@ -79,4 +81,13 @@ prometheus.scrape "example" {
   }]
 
   forward_to = [prometheus.remote_write.local_prometheus.receiver]
+}
+
+otelcol.exporter.otlp "local_tempo" {
+    client {
+        endpoint = "tempo:4317"
+        tls {
+    			insecure = true
+    		}
+      }
 }

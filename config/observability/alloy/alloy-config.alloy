@@ -1,0 +1,82 @@
+// First part: Listen to what services are publishing in HTTP 4318
+otelcol.receiver.otlp "otlp_receiver" {
+    http {
+        endpoint = "0.0.0.0:4318"
+    }
+
+    output {
+        metrics = [otelcol.processor.batch.default.input,]
+        traces  = [otelcol.processor.batch.default.input,]
+    }
+}
+
+otelcol.processor.batch "default" {
+    // Wait until we've received 1000 samples, up to a maximum of 2000.
+    send_batch_size = 1000
+    send_batch_max_size = 2000
+
+    // Or until 2 seconds have elapsed.
+    timeout = "2s"
+
+    // When the Alloy has enough batched data, send it to the OpenTelemetry exporter named 'tempo'.
+    output {
+        metrics = [otelcol.exporter.prometheus.default.input]
+        traces  = [otelcol.exporter.otlp.tempo.input]
+    }
+}
+
+
+otelcol.exporter.prometheus "default" {
+        forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+prometheus.remote_write "mimir" {
+    endpoint {
+        url = "http://mimir:9009/api/v1/push"
+    }
+}
+
+otelcol.exporter.otlp "tempo" {
+    client {
+        endpoint = "tempo:4317"
+        tls {
+            insecure             = true
+            insecure_skip_verify = true
+        }
+    }
+}
+
+local.file_match "app_logs" {
+    path_targets = [{"__path__" = "/tmp/app-logs/apartment102.log"}]
+    sync_period = "5s"
+}
+
+loki.source.file "local_files" {
+    targets    = local.file_match.app_logs.targets
+    forward_to = [loki.process.add_label.receiver]
+}
+
+loki.process "add_label" {
+    stage.logfmt {
+        mapping = {
+            "level" = "",
+            "trace_id" = "",
+            "span_id" = "",
+            "date_time" = "",
+        }
+    }
+
+    stage.static_labels {
+        values = {
+            service_name = "apartment102",
+        }
+    }
+
+     forward_to = [loki.write.local_loki.receiver]
+}
+
+loki.write "local_loki" {
+    endpoint {
+        url = "http://loki:3100/loki/api/v1/push"
+    }
+}

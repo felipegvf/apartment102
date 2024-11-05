@@ -1,0 +1,270 @@
+///////////////////////////////////////////////////////////////////////////////
+// Configuration file
+local.file "endpoints" {
+    // The endpoints file is used to define the endpoints, credentials and options
+    // for the Alloy export to.
+    filename = "/etc/alloy/endpoints.json"
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Metrics scraping
+
+// Scrape Tempo, Mimir, Phlare and Loki
+// We use the prometheus.scrape component and give this a unique label.
+prometheus.scrape "mltpg_infra" {
+    // The targets array allows us to specify which service targets to scrape from.
+    // Define the address to scrape from, and add a 'group' and 'service' label for each target.
+    targets = [
+        {"__address__" = "mimir:9009", group = "infrastructure", service = "mimir"},
+        {"__address__" = "tempo:3200", group = "infrastructure", service = "tempo"},
+        {"__address__" = "loki:3100", group = "infrastructure", service = "loki"},
+        {"__address__" = "pyroscope:4040", group = "infrastructure", service = "pyroscope"},
+        {"__address__" = "grafana:3000", group = "infrastructure", service = "grafana"},
+    ]
+
+    // Scrape all of these services every 15 seconds.
+    scrape_interval = "15s"
+    // Send the metrics to the prometheus remote write receiver for exporting to Mimir.
+    forward_to = [prometheus.remote_write.mimir.receiver]
+    // The job name to add to the scraped metrics.
+    job_name = "mltpg_infra"
+}
+
+// Scrape the local Alloy itself.
+prometheus.scrape "alloy" {
+    // Only one target, the Alloy, it's part of the 'infrastructure' group.
+    targets = [{"__address__" = "localhost:12345", group = "infrastructure", service = "alloy"}]
+    // Send the metrics to the prometheus remote write receiver for exporting to Mimir.
+    forward_to = [prometheus.remote_write.mimir.receiver]
+    // Attach job name to the metrics.
+    job_name = "alloy"
+}
+
+// The prometheus.remote_write component defines an endpoint for remotely writing metrics to.
+// In this case, our locally running Mimir service.
+prometheus.remote_write "mimir" {
+    // The endpoint is the Mimir service.
+    endpoint {
+        url = json_path(local.file.endpoints.content, ".metrics.url")[0]
+
+        // Basic auth credentials. If the endpoint is not TLS, whilst sent, these will be ignored.
+        basic_auth {
+            username = json_path(local.file.endpoints.content, ".metrics.basicAuth.username")[0]
+            password = json_path(local.file.endpoints.content, ".metrics.basicAuth.password")[0]
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Logging
+
+// Log file
+local.file_match "apartment102" {
+    path_targets = [{"__path__" = "/tmp/app-logs/apartment102.log"}]
+    sync_period = "5s"
+}
+
+// The Loki source will read the file in the target
+loki.source.file "local_files" {
+    targets    = local.file_match.apartment102.targets
+    forward_to = [loki.process.apartment102.receiver]
+}
+
+
+// The Loki processor allows us to accept a correctly formatted Loki log and to run a series of pipeline stages on it.
+// This particular example shows how to parse timestamp data within a logline and use it as the timestamp for the logline.
+loki.process "apartment102" {
+
+    // Use the timestamp stage to take the extracted value, now in the map, and use it as the timestamp for the logline.
+    // By doing so, you can ensure that logs that have reached Alloy at a later time than originally emitted are
+    // corrected to use the correct time, instead of the time they were received by Alloy.
+    // This stage shows an example of a user-defined timestamp format (note that the specific time the format is
+    // declared in is important for Alloy to understand the format correctly). We could also have used the RFC3339
+    // identifier in this case.
+    stage.timestamp {
+        source = "loggedtime"
+        format = "2006-01-02T15:04:05.000Z07:00"
+    }
+
+    stage.logfmt {
+        mapping = {
+            "extracted_level" = "level",
+        }
+    }
+
+    stage.labels {
+        values = {
+            "level" = "extracted_level",
+        }
+    }
+
+    stage.static_labels {
+        values = {
+            service_name = "apartment102",
+        }
+    }
+
+    // Forward to the Loki writer for output.
+    forward_to = [loki.write.apartment102.receiver]
+}
+
+loki.write "apartment102" {
+    // Output the Loki log to the local Loki instance.
+    endpoint {
+        url = json_path(local.file.endpoints.content, ".logs.url")[0]
+
+        // The basic auth credentials for the Loki instance.
+        basic_auth {
+            username = json_path(local.file.endpoints.content, ".logs.basicAuth.username")[0]
+            password = json_path(local.file.endpoints.content, ".logs.basicAuth.password")[0]
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Tracing
+
+// The OpenTelemetry receiver is used to ingest all incoming trace spans. A label 'otlp_receiver' is added to uniquely
+// identify this instance.
+// Note that both the instrumented application *and* Beyla use the same receiver to send traces.
+otelcol.receiver.otlp "otlp_receiver" {
+    // We don't technically need this, but it shows how to change listen address and incoming port.
+    // In this case, the Alloy is listening on all available bindable addresses on port 4317 (which is the
+    // default OTLP gRPC port) for the OTLP protocol.
+    grpc {
+        endpoint = "0.0.0.0:4317"
+    }
+
+    http {
+        endpoint = "0.0.0.0:4318"
+    }
+
+    // We define where to send the output of all ingested traces. In this case, to the OpenTelemetry batch processor
+    // named 'default'.
+    output {
+        metrics = [otelcol.processor.batch.default.input,]
+        traces = [
+            otelcol.processor.batch.default.input,
+            otelcol.connector.spanlogs.autologging.input,
+        ]
+    }
+}
+
+// The OpenTelemetry batch processor collects trace spans until a batch size or timeout is met, before sending those
+// spans onto another target. This processor is labeled 'default'.
+otelcol.processor.batch "default" {
+    // Wait until we've received 1000 samples, up to a maximum of 2000.
+    send_batch_size = 1000
+    send_batch_max_size = 2000
+    // Or until 2 seconds have elapsed.
+    timeout = "2s"
+    // When the Alloy has enough batched data, send it to the OpenTelemetry exporter named 'tempo'.
+    output {
+        traces = [otelcol.exporter.otlp.tempo.input]
+        metrics = [otelcol.exporter.prometheus.default.input]
+    }
+}
+
+otelcol.exporter.prometheus "default" {
+        forward_to = [prometheus.remote_write.mimir.receiver]
+}
+
+// The OpenTelemetry exporter exports processed trace spans to another target that is listening for OTLP format traces.
+// A unique label, 'tempo', is added to uniquely identify this exporter.
+otelcol.exporter.otlp "tempo" {
+    // Define the client for exporting.
+    client {
+        // Authentication block.
+        auth = otelcol.auth.headers.tempo.handler
+
+        // Send to the locally running Tempo instance, on port 4317 (OTLP gRPC).
+        endpoint = json_path(local.file.endpoints.content, ".traces.url")[0]
+
+        // Configure TLS settings for communicating with the endpoint.
+        tls {
+            // The connection is insecure.
+            insecure = json_path(local.file.endpoints.content, ".traces.tls.insecure")[0]
+            // Do not verify TLS certificates when connecting.
+            insecure_skip_verify = json_path(local.file.endpoints.content, ".traces.tls.insecureSkipVerify")[0]
+        }
+    }
+}
+
+// The OpenTelemetry auth headers component is used to define the headers for the OTLP exporter. Note we don't
+// use basic auth here because the OTel spec. demands TLS enabled for basic auth. Using basic header auth
+// allow us to still wire up the basic auth credentials to the Tempo exporter even when they won't be required.
+otelcol.auth.headers "tempo" {
+    header {
+        key = "Authorization"
+        value = join(["Basic ", json_path(local.file.endpoints.content, ".traces.basicAuthToken")[0]], "")
+    }
+}
+
+// The OpenTelemetry spanlog connector processes incoming trace spans and extracts data from them ready
+// for logging. This is the equivalent of Grafana Alloy's static automatic_logging pipeline.
+otelcol.connector.spanlogs "autologging" {
+    // We only want to output a line for each root span (ie. every single trace), and not for every
+    // process or span (outputting a line for every span would be extremely verbose).
+    spans = false
+    roots = true
+    processes = false
+    // We want to ensure that the following three span attributes are included in the log line, if
+    // present.
+    span_attributes = [ "http.method", "http.target", "http.status_code" ]
+
+    // Overrides the default key in the log line to be `traceId`, which is then used by Grafana to
+    // identify the trace ID for correlation with the Tempo datasource.
+    overrides {
+        trace_id_key = "traceId"
+    }
+    // Send to the OpenTelemetry Loki exporter.
+    output {
+        logs = [otelcol.exporter.loki.autologging.input]
+    }
+}
+
+// Simply forwards the incoming OpenTelemetry log format out as a Loki log.
+// We need this stage to ensure we can then process the logline as a Loki object.
+otelcol.exporter.loki "autologging" {
+    forward_to = [loki.process.autologging.receiver]
+}
+
+// The Loki processor allows us to accept a correctly formatted Loki log and mutate it into
+// a set of fields for output.
+loki.process "autologging" {
+    // The JSON stage simply extracts the `body` (the actual logline) from the Loki log, ignoring
+    // all other fields.
+    stage.json {
+        expressions = { "body" = "" }
+    }
+    // The output stage takes the body (the main logline) and uses this as the source for the output
+    // logline. In this case, it essentially turns it into logfmt.
+    stage.output {
+        source = "body"
+    }
+
+    // Finally send the processed logline onto the Loki exporter.
+    forward_to = [loki.write.autologging.receiver]
+}
+
+// The Loki writer receives a processed Loki log and then writes it to a Loki instance.
+loki.write "autologging" {
+    // Add the `alloy` value to the `job` label, so we can identify it as having been generated
+    // by Grafana Alloy when querying.
+    external_labels = {
+        job = "alloy",
+    }
+
+    // Output the Loki log to the local Loki instance.
+    endpoint {
+        url = json_path(local.file.endpoints.content, ".logs.url")[0]
+
+        // The basic auth credentials for the Loki instance.
+        basic_auth {
+            username = json_path(local.file.endpoints.content, ".logs.basicAuth.username")[0]
+            password = json_path(local.file.endpoints.content, ".logs.basicAuth.password")[0]
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
