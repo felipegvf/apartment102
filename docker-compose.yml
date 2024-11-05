@@ -19,7 +19,6 @@ services:
     image: grafana/alloy:latest
     ports:
       - "12345:12345"
-      - "4317:4317"
       - "4318:4318"
     volumes:
       - ./config/observability/alloy/alloy-config.alloy:/etc/alloy/config.alloy
@@ -54,11 +53,6 @@ services:
     ports:
       - "3200:3200"
       - "4317:4317"
-      - "4318:4318"
-      - "9411:9411"
-      - "55680:55680"
-      - "55681:55681"
-      - "14250:14250"
     command: [ "-config.file=/etc/tempo.yaml" ]
     volumes:
       - "./config/observability/tempo.yaml:/etc/tempo.yaml"
