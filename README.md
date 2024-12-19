@@ -15,6 +15,13 @@ To run this project using only docker, you can create your own Dockerfile or you
 In case you decide the one that was provided, here are some tips:
 
 ```shell
-    docker build -t app-apartment012 .
-    docker run -p 8080:8080 app-apartment012
+    docker build -t app-apartment102 .
+    docker run -p 8080:8080 app-apartment102
+```
+
+To run this project with observability
+
+```shell
+    docker compose -f docker-compose.yml -p apt102 up -d
+    docker compose -f docker-compose.yml -p apt102 down --remove-orphans
 ```
