@@ -14,7 +14,7 @@
     }
   },
   "traces": {
-    "url": "http://tempo:4317",
+    "url": "grpc://tempo:4317",
     "basicAuthToken": "",
     "tls": {
       "insecure": true,

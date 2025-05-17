@@ -6,7 +6,6 @@ otelcol.receiver.otlp "otlp_receiver" {
 
     output {
         metrics = [otelcol.processor.batch.default.input,]
-        traces  = [otelcol.processor.batch.default.input,]
     }
 }
 
@@ -21,7 +20,6 @@ otelcol.processor.batch "default" {
     // When the Alloy has enough batched data, send it to the OpenTelemetry exporter named 'tempo'.
     output {
         metrics = [otelcol.exporter.prometheus.default.input]
-        traces  = [otelcol.exporter.otlp.tempo.input]
     }
 }
 
@@ -33,16 +31,6 @@ otelcol.exporter.prometheus "default" {
 prometheus.remote_write "mimir" {
     endpoint {
         url = "http://mimir:9009/api/v1/push"
-    }
-}
-
-otelcol.exporter.otlp "tempo" {
-    client {
-        endpoint = "tempo:4317"
-        tls {
-            insecure             = true
-            insecure_skip_verify = true
-        }
     }
 }
 
@@ -68,7 +56,7 @@ loki.process "add_label" {
 
     stage.static_labels {
         values = {
-            service_name = "apartment102",
+            service_name = "apto102",
         }
     }
 
