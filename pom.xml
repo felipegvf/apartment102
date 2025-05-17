@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.5</version>
+        <version>3.4.5</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>dev.felipegvf</groupId>
@@ -28,21 +28,12 @@
     </scm>
     <properties>
         <java.version>21</java.version>
-        <!--	Sonar properties	-->
         <sonar.organization>felipegvf</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
-        <sonar.version>4.0.0.4121</sonar.version>
+        <sonar.version>5.1.0.4751</sonar.version>
         <sonar.exclusions>**/Application.java</sonar.exclusions>
-        <!--	Sonar properties	-->
-
-        <!--	JTE					-->
-        <jte.version>3.1.12</jte.version>
-        <!--	JTE					-->
-
-        <!--    JaCoCo              -->
-        <jacoco.version>0.8.12</jacoco.version>
-        <!--    JaCoCo              -->
-
+        <jte.version>3.2.1</jte.version>
+        <jacoco.version>0.8.13</jacoco.version>
     </properties>
     <dependencies>
 
